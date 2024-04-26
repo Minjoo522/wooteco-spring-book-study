@@ -1,6 +1,6 @@
 ![header](https://capsule-render.vercel.app/api?type=waving&height=250&color=timeGradient&text=SPRING_TO_AUTUMN&fontAlign=72&fontSize=40)
 
-# [우아한테크코스] 스프링에서 어텀으로 (스프링 스터디)
+# [우아한테크코스] 스프링에서 어텀으로 (스프링 스터디) 🌸 ➡️ 🍁 ❤️‍🔥
 
 ## 목표
 
