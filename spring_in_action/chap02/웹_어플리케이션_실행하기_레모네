@@ -1,0 +1,392 @@
+## 배우는 내용
+- `모델 데이터`를 브라우저에서 보여주기
+- `폼 입력 처리`하고 `검사`하기
+- `뷰 템플릿 라이브러리` 선택하기
+
+==스프링 MVC는 간단하게 정적인 콘텐츠를 보여주는 것보다 훨씬 더 많은 일을 할 수 있다!==
+
+## 2.1 정보 보여주기
+- 타코 클라우드 웹 어플리케이션은 선택할 수 있는 식자재가 고정되어 있으면 안된다.
+- 수시로 변경되어야 하기 때문에 HTML 파일에 하드 코딩 되면 안된다.
+- 사용 가능한 식자재의 내역을 데이터베이스로부터 가져와서 고객이 볼 수 있도록 해당 페이지에 전달되어야 한다.
+
+필요한 것!
+- 데이터 가져오고 처리한다 : 컨트롤러
+- 브라우저에 보여주는 데이터를 HTML로 나타낸다 : 뷰
+
+필요한 컴포넌트!
+- 타코 식자재의 속성을 정의하는 `도메인 클래스`
+- 식자재 정보를 가져와서 뷰에 전달하는 스프링 MVC `컨트롤러 클래스`
+- 식자재의 내역을 사용자의 브라우저에 보여주는 `뷰 템플릿`
+
+### ==2.1.1 도메인 설정하기==
+``` java
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
+
+@Data
+@RequiredArgsConstructor
+public class Ingredient {
+	private final String id;
+	private final String name;
+	private final Type type;
+
+	public static enum Type {
+		WRAP, PROTEIN, VEGGIES, CHEESE, SAUCE;
+	}
+}
+```
+- 특징
+- 생성자가 없다.
+- 게터 세터가 없다.
+- equals(), hashCode(), toString() 등 유용한 메서드가 없다.
+- 어떻게 가능할까?
+-  Lombok 라이브러리는 **컴파일 시**에 자동으로 위의 메서드를 생성한 후, **런타임 시**에 사용할 수 있게 한다.
+	- 참고로 스프링 라이브러리는 아니다.
+- `@Data` 의 역할
+	- 소스 코드에 누락된 final 속성들을 초기화하는 생성자
+	- 속성들의 게터와 세터
+	- 등을 생성하라고 Lombok에게 알려준다.
+- `@RequiredArgsConstructor`의 역할
+	- 클래스에 선언된 final 필드나 `@NotNull`이 붙은 필드를 매개변수로 하는 생성자를 자동으로 생성해준다.
+	- 생성자로 의존성 주입(DI)을 하면 @Autowired 를 사용하지 않고도 의존성을 주입할 수 있다.
+- 의존성을 추가하면 Lombok을 사용할 수 있다.
+- 참고로 인텔리제이는 Lombok 플러그인이 자동으로 깔려있다.
+
+> [!note]- @Data 조사하기
+> `@Data` 는 `@Getter/Setter`, `@ToString`, `@EqualsAndHashCode`, `@RequiredArgsConstructor`를 합쳐 놓은 어노테이션이다.
+> 
+> `@Data`를 사용하면 코드가 간결해지지만, 단점도 있다!
+> 1. Setter가 존재한다.
+> 2. 생성자의 인자 순서가 중요하다.
+>    - `@RequiredArgsConstructor` 어노테이션 때문에 생성자를 통해 객체를 생성할 때 인자의 순서가 굉장히 중요하다.
+>    - 인자의 순서가 변경이 된다면 원하는 값이 들어가지 않을 수 있다.
+>      
+> 그래서 규칙을 정해서 사용하는 것이 좋다.
+> 1. Entity에서는 사용하지 않는다.
+>    - DB와 밀접한 관계가 있는 Entity에서 사용할 경우 위험
+> 2. DTO에서만 사용한다. 
+>    - DTO를 통해 객체 값을 확인하는 테스트에서 유용하게 쓰일 수 있다.
+> 
+> 참고 : [@Data 어노테이션 사용해야 되나?](https://medium.com/mo-zza/data-%EC%96%B4%EB%85%B8%ED%85%8C%EC%9D%B4%EC%85%98-%EC%82%AC%EC%9A%A9%ED%95%B4%EC%95%BC-%EB%90%98%EB%82%98-34d04fb23fea)
+
+``` java
+@Data
+public class Taco {
+	private String name;
+	private List<String> ingredients;
+}
+```
+- 타코 클래스.
+
+### 2.1.2 컨트롤러 클래스 생성하기
+##### 컨트롤러의 역할?
+- HTTP 요청 처리
+- 브라우저에 보여줄 HTML을 뷰에 요청
+- REST 형태의 응답 몸체에 직접 데이터를 추가
+ 
+ > [!note]- REST란?
+ > REST = Representational(표현) State(상태) Transfer(이동) 의 약자.
+ > 
+ > > 자원을 **표현**으로 구분하여 해당 자원의 **상태**를 **주고받는** 모든 것
+ >
+ > 자원을 표현으로 구분한다는게 무슨 뜻?
+ > - 예) `예약 정보`가 자원이면, 예약 정보를 `reservation` 로 네이밍 하는 것.
+ >   
+ > 해당 자원의 상태를 주고받는다는게 이 무슨 뜻? 
+ > - 데이터가 **요청** 되어지는 시점에서 자원의 상태(정보)를 전달한다.
+ > - 보통 JSON 형태로 주고받음.
+ > 
+ > REST는 웹의 기존 기술과 **HTTP 프로토콜**을 그대로 활용하기 때문에 웹의 장점을 최대한 활용할 수 있다.
+ > > 요약 : 네트워크 상에서 Client와 Server 사이의 통신 방식 중 하나
+ > 
+ > REST의 구체적 개념
+ > - HTTP URI를 통해 자원을 명시
+ > - HTTP Method(Post, Get, put, Delete)를 통해 해당 자원에 대한 CRUD를 적용
+
+``` java
+@Slf4j
+@Controller
+@RequestMapping("/design")
+public class DesignTacoController {
+
+	@GetMapping
+	public String showDesignForm(Model model) {
+		List<Ingredient> ingredients = Array.asList(
+			new Ingredient("토마토", "썰린 토마토", Type.VEGGIES),
+			...
+		)
+
+		Type[] type = Ingredient.Type.values();
+		for (Type type : types) {
+			model.addAttribute(type.toString().toLowerCase(), filterByType(ingredients, type));
+		}
+
+		model.addAttribute("taco", new Taco());
+		
+		return "design"; // 뷰의 논리적 이름
+	}
+
+	private List<Ingredient> filterByType(
+		List<Ingredient> ingredients, Type type) {
+		
+		return ingredients
+					.stream()
+					.filter(x -> x.getType().equals(type))
+					.collect(Collectors.toList());
+	}
+}
+```
+ - `@Slf4j` : 컴파일 시에 Lombok에 제공되며, 이 클래스에 자동으로 SLF4J Logger를 생성한다.
+
+> [!note]- @Slf4j 알아보기
+> 개발을 할 때 Logging은 아주 중요하다.
+> Spring boot에서는 로그를 남기는 방법이 많이 있다.
+> 그 중 가장 편하게 사용되는 것이 `@Slf4j` 이다.
+> 
+> @Slf4j 란?
+> - Simple Logging Facade for Java
+> - 로깅에 대한 추상 레이어를 제공하는 인터페이스의 모음
+> - 로깅 프레임워크가 변경 되더라도 코드의 수정이 불필요하다.
+
+ - `@Controller` : 해당 클래스가 컨트롤러로 식별되게 한다.
+	 - 컴포넌트 검색을 해야 한다는 것을 나타낸다.
+	 - 스프링이 해당 클래스를 찾은 후 스프링 애플리케이션 컨텍스트의 빈으로 이 클래스의 인스턴스를 자동 생성한다.
+- `@RequestMapping("경로")` : 클래스에 붙으면 해당 컨트롤러가 처리하는 요청 경로를 나타낸다.
+
+
+#### GET 요청 처리하기
+- 클래스에 `@RequestMapping('admin')` 어노테이션이 붙고, `@GetMapping`이 붙은 `hello()` 메서드가 있다. 
+- 이 때 HTTP GET 요청이 수신되면, 이 요청을 처리하기 위해 `hello()` 메서드가 호출된다.
+- 과거에는 `@RequestMapping(method=RequestMethod.GET)`으로 GET 요청을 수신했다.
+- 지금은 `GetMapping`을 사용한다.
+	- 더 간결하고 HTTP GET 요청에 특화되어 있다!
+##### Model
+- **컨트롤러**와 데이터를 보여주는 **뷰** 사이에서 *데이터를 운반하는 객체*
+- Model 객체의 속성에 있는 데이터는 뷰가 알 수 있는 서블릿 요청 속성들로 복사된다.
+
+### 2.1.3 뷰 디자인하기
+스프링은 뷰를 정의하는 여러가지 방법을 제공한다.
+- JSP(Java Server Page)
+- Thymeleaf
+- FreeMaker
+- Mustache
+- 그루비 기반 템플릿
+-  등등
+
+46pg - 타임리프 html 자세한 설명.
+
+##### Thymeleaf 특성
+- 타임리프와 같은 뷰 라이브러리는 어떤 웹 프레임워크와도 사용 가능하도록 설계되었다.
+- 그래서 스프링의 추상화 모델을 알지 못함.
+- Model 대신 서블릿 요청 속성을 사용한다.
+- 그러므로 뷰에게 요청을 전달하기 앞서 뷰 템플릿이 사용하는 `요청 속성`에 모델 데이터를 복사한다.
+- Thymeleaf 템플릿 = 요청 데이터를 나타내는 요소 속성을 갖는 HTML
+	- 만약 요청 속성의 key가 "message"이고, Thymeleaf를 사용해서 HTML `<p>` 태그로 나타내고 싶다면?
+	- `<p th:text="${message}">placeholder message</p>`
+	- `<p>` 요소의 body는 key가 "message"인 서블릿 요청 속성 값으로 교체됨.
+	- `${}` 연산자 : 요청 속성("message") 값을 사용해라.
+- 자주 쓰이는 속성
+	- `th:text` : 교체를 수행하는 네임스페이스 속성
+	- `th:each` : Collection의 각 요소를 HTML로 나타냄
+- `@{}` 연산자 : 정적 콘텐츠의 위치를 나타낸다.
+	- `<link rel="stylesheet" th:href="@{/styles.css}" />`
+
+## 2.2 폼 제출 처리하기
+- `<form>` 태그에 action 속성이 선언되지 않았다고 하자.
+- 이 경우 폼이 제출되면 브라우저가 폼의 모든 데이터를 모아서 폼에 나타난 GET 요청과 같은 경로(`/design`)로 서버에 HTTP POST 요청을 전송한다.
+- 따라서 이 요청을 처리하는 컨트롤러의 메서드가 있어야 한다.
+- 결론 : `/design` 경로의 POST 요청을 처리하는 DesignTacoController의 새로운 메서드를 작성하자.
+
+``` java
+// 어노테이션 생략
+public class DesignTacoController {
+	@PostMapping
+	public String processDesign(Taco design) {
+		log.info("Processing design: " + design);
+
+		return "redirect:/orders.current";
+	}
+}
+```
+- `processDesign()`도 String을 반환하지만 조금 다르다.
+	- 리디렉션(redirection; 변경된 경로로 재접속) 뷰를 나타내는 "redirect:"가 제일 앞에 붙는다.
+	- 즉, processDesign()의 실행이 끝난 후 사용자의 브라우저가 `/orders/current` 상대 경로로 재접속되어야 한다는 것을 나타낸다.
+- 아직 리디렉션 경로인 `/orders/current` 경로의 요청을 처리할 컨트롤러가 없다.
+- 만들어 보자!
+``` java
+@Slf4j
+@Controller
+@RequestMapping("/orders")
+public class OrderController {
+	
+	@GetMapping("/current")
+	public String orderForm(Model model) {
+		model.addAttribute("order", new Order());
+		
+		return "orderForm";	
+	}
+}
+```
+- 만약 orderForm.html 뷰에서 `<form>` 태그에 폼 액션을 `/orders` 경로로 지정했을 경우 `/orders` 경로의 POST 요청을 처리하는 메서드가 필요하다.
+``` java
+@PostMapping
+public String processOrder(Order order) {
+	log.info("Order submitted: " + order);
+	return "redirect:/";
+}
+```
+- ==? current 경로 어디감??==
+
+## 2.3 폼 입력 유효성 검사하기
+- 타코 디자인 페이지에서 사용자가 식자제를 아예 선택하지 않는다면?
+- 배달 주소를 입력하지 않는다면?
+- 아직까지는 유효하지 않은 타코 생성을 막을 방법이 없다.
+- 폼의 유효성 검사를 하는 한 가지 방법은 `processDesign()`과 `processOrder()` 메서드에 수많은 if/then 블록을 더럽게 추가하는 것이 있다.
+	- 비추!
+- 스프링은 자바의 **빈 유효성 검사 API**를 지원한다.
+	- 이것을 사용하면 *애플리케이션에 추가 코드를 작성하지 않고* 유효성 검사 규칙을 쉽게 선언할 수 있다.
+	- 스프링 부트가 지원한다.
+	- 유효성 검사 API와 이 API를 구현한 `Hibernate 컴포넌트`가 스프링 부트의 **web-starter** 의존성을 자동 추가되기 때문이다.
+##### ==스프링 MVC에 유효성 검사를 적용하는 과정==
+1. 유효성을 검사할 클래스에 검사 규칙 선언
+	- 예) Taco, Order 클래스 
+	- 유효성 검사 API는 몇가지 *애노테이션을 제공한다.*
+		- 검사 규칙을 선언하기 위해 **도메인 객체의 속성**에 지정할 수 있다.
+1. 유효성 검사를 해야 하는 **컨트롤러 메서드**에 검사를 수행한다는 것을 지정
+	- 예) DesignTacoController의 `processDesign()` 메서드, OrderController의 `processOrder()` 메서드
+2. 검사 에러를 보여주도록 폼 뷰를 수정
+
+### ==2.3.1 유효성 검사 규칙 선언하기==
+##### Taco 도메인 클래스
+``` java
+@Data
+public class Taco {
+
+	@NotNull
+	@Size(min=5, message="이름은 최소 5 char 여야 합니다.")
+	private String name;
+	...
+}
+```
+- name 속성에는 값이 null이 아니여야 한다는 규칙 + 최소한 5개 문자여야 한다는 것을 선언.
+##### Order 클래스
+``` java
+@Data
+public class Order {
+	@NotBlank(message="이름을 입력해 주세요.")
+	private String deliveryName;
+	...
+	@CreditCardNumber(message="유효한 신용 카드 번호가 아닙니다.")
+	private String ccNumber;
+
+	@Pattern(regexp="^(0[1-9]|1[0-2])([\\/])([1-9][0-9])$", message="MM/YY 형식으로 입력해 주세요.")
+	private String ccExpiration;
+
+	@Digits(integer=3, fraction=0, message="유효하지 않은 CVV 입니다.")
+	private String ccCVV;
+}
+```
+- 배달자 이름, 배달 주소의 경우 사용자가 입력을 하지 않은 필드가 있는지 확인만 하면 된다.
+	- `@NotBlank` 애노테이션을 사용한다.
+- `ccNumber` 속성의 경우 값이 있는지 + 입력 값이 유효한 신용카드 번호인지 확인해야 한다.
+	- `@CreditCardNumber` 는 속성의 값이 Luhn(룬) 알고리즘 검사에 합격한 유효한 시용 카드 번호여야 한다는 것을 선언.
+		- 사용자의 입력 실수나 고의적인 악성 데이터를 방지해준다.
+		- 그러나 입력된 신용 카드 번호가 실제로 존재하는 것인지는 검사하지 못함.
+- `ccExpiration` 속성의 경우 MM/YY 형식의 검사에 사용할 수 있는 애노테이션이 없기 때문에 정규 표현식을 사용한다.
+- `ccCVV` 속성의 경우 `@Digits` 애노테이션을 지정하여 입력 값이 정확하게 세 자리 숫자인지 검사한다.
+- 모든 유효성 검사 애노테이션은 **message 속성**을 갖고 있다.
+	- 유효성 규칙을 충족하지 못할 때 보여줄 메시지를 뜻함.
+
+### 2.3.2 폼과 바인딩될 때 유효성 검사 수행하기
+Taco와 Order의 유효성 검사 규칙 선언이 끝났다.
+이제 각 폼의 POST 요청이 관련 메서드에서 처리될 때 유효성 검사가 수행되도록 컨트롤러를 수정한다.
+``` java
+@PostMapping
+public String processDesign(@Valid Taco design, Errors errors) {
+	if (error.hasErrors()) {
+		return "design";
+	}
+
+	log.info("Processing design: " + design);
+	return "redirect:/orders/current";
+}
+```
+  - `@Valid` 애노테이션은 제출된 Taco 객체의 유효성 검사를 수행하라고 스프링 MVC에 알려준다.
+	  - 제출된 폼 데이터와 Taco 객체가 바인딩 된 후이다.
+	  - processDesign의 코드가 실행되기 전이다.
+  - 어떤 검사 에러가 있으면 에러의 상세 내역이 Errors 객체에 저장되어 processDesign() 으로 전달된다.
+  - 위의 코드에서는 에러가 발생하면 Taco 처리를 중지하고, "design" 뷰 이름을 반환하여 폼이 다시 보이게 한다.
+  - 에러가 있으면 사용자가 입력 오류를 수정할 수 있도록 해당 요청이 폼 뷰에 다시 보내준다.
+  - 그러나 무엇을 수정해야 할지 사용자가 알기 위해 에러를 폼에 보여주어야 한다.
+
+### 2.3.3 유효성 검사 에러 보여주기
+Thymeleaf는 `fields`와 `th:errors` 속성을 통해 Errors 객체의 편리한 사용 방법을 제공한다.
+``` java
+<label for="ccNumber">Credit Card #: </label>
+<input type="text" th:field="*{ccNumber}"/>
+<span class="validationError"
+		th:if="${#fields.hasError('ccNumber')}"
+		th:errors="*{ccNumber}">CC Num Error</span>
+```
+- `<span>` 요소의 class 속성은 사용자의 주의를 끌기 위한 에러의 명칭일 지정한다.
+- `th:if` 는 이 `<span>`을 보여줄지 말지를 결정한다.
+- `hasError()` 메서드를 사용해서 ccNumber 필드에 에러가 있는지 검사한다.
+- 있다면 `<span>`이 나타난다.
+- `th:error` 속성은 ccNumber 필드를 참조한다.
+- 이 필드에 에러가 있다고 가정하고, `<span>`에 사전 지정된 메시지(CC Num Error)를 검사 에러 메시지로 교체한다.
+
+## 2.4 뷰 컨트롤러로 작업하기
+##### 컨트롤러의 프로그래밍 패턴
+- 스프링 컴포넌트 검색에서 자동으로 찾는다.
+- 스프링 애플리케이션 컨텍스트의 빈으로 생성되는 컨트롤러 클래스임을 나타내기 위해 모두 @Controller 애노테이션을 사용한다.
+- HomeController 외의 다른 컨트롤러에서는 자신이 처리하는 요청 패턴을 정의하기 위해 @RequestMapping 애노테이션을 사용한다.
+	- HomeController는 모델 데이터나 사용자 입력을 처리하지 않는 간단한 컨트롤러이다.
+- 메서드에서 어떤 종류의 요청을 처리해야 하는지 나타내기 위해 @GetMapping 또는 @PostMapping 애노테이션이 지정된 하나 이상의 메서드를 갖는다.
+
+``` java
+@Configuration
+public class Webconfig implements WebMvcConfigurer {
+	@Override
+	public void addViewControllers(ViewControllerRegistry registry) {
+		registry.addViewController("/").setViewName("home");
+	}
+}
+```
+- 뷰 컨트롤러의 역할을 수행하는 구성 클래스이다.
+- 필요한 메서드만 선택해서 오버라이딩 한다.
+- addViewControllers()는 하나 이상의 뷰 컨트롤러를 등록하기 위해 사용할 수 있는 ViewControllerRegistry를 인자로 받는다.
+- 뷰 컨트롤러가 GET 요청을 처리하는 경로인 "/"을 인자로 전달하여 addViewController를 호출한다.
+- 이 메서드는 ViewControllerRegistration 객체를 반환한다.
+- 그리고 "/" 경로의 요청이 전달되어야 하는 뷰로 home을 지정하기 위해 연달아 ViewControllerRegistration 객체의 setViewName()을 호출한다.
+- 위의 구성 클래스(WebConfig)를 통해 HomeController를 대체할 수 있다.
+
+## 2.5 뷰 템플릿 라이브러리 선택하기
+`JSP`의 경우 다른 뷰 템플릿 라이브러리와 달리 의존성을 지정하지 않는다.
+서블릿 컨테이너(기본적으로 톰캣) 자신이 JSP 명세를 구현하므로 스프링 부트의 스타터로 지정할 필요가 없다.
+
+그러나 JSP를 선택하면 추가로 고려할 것이 있다.
+- 자바 서블릿 컨테이너는 /WEB-INF 밑에서 JSP 코드를 찾는다.
+- 따라서 WAR 파일로 생성하고, 서블릿 컨테이너에 설치하는 경우에는 JSP를 선택해야 한다.
+- 실행 가능한 JAR 파일로 생성한다면 JSP를 제외한 나머지(예: Thymeleaf) 중 하나를 선택해야 한다. 
+
+### ==2.5.1 템플릿 캐싱==
+- 기본적으로 템플릿은 최초 사용될 때 한 번만 파싱(코드 분석) 된다.
+- 파싱된 결과는 향후 사용을 위해 캐시에 저장된다.
+- 이것은 프로덕션에서 애플리케이션을 실행할 때 좋은 기능이다.
+	- 매번 요청을 처리할 때마다 불필요하게 템플릿 파싱을 하지 않기 때문이다.
+- 개발 시에는 템플릿 캐싱이 달갑지 않다.
+	- 페이지를 수정했을 경우, 웹 브라우저에서 새로고침을 하더라도 수정 전의 페이지를 보게 된다.
+	- 변경된 페이지를 보려면 애플리케이션을 다시 시작해야 한다.
+- 템플릿 캐싱을 비활성화 할 수 있다.
+	- `Tymeleaf` : spring.thymeleaf.cache = false
+- 단, 프로덕션에서 애플리케이션을 배포할 때는 방금 추가한 설정을 **삭제** 하거나 **true**로 변경해야 한다.
+
+## 요약
+- 스프링 MVC는 스프링 애플리케이션의 웹 프론트엔드 개발에 사용된다.
+- 스프링 MVC는 애노테이션을 기반으로 하며, @RequestMapping, @GetMapping, @PostMapping과 같은 애노테이션을 사용해서 요청 처리 메서드를 선언할 수 있다.
+- 대부분의 요청 처리 메서드는 마지막에 Thymeleaf 템플릿과 같은 논리 뷰 이름을 반환한다.
+	- 왜? 모델 데이터와 함께 해당 요청을 전달하기 위해서
+- 스프링 MVC는 **자바 빈 유효성 검사 API**와 **Hibernate Validator** 등의 유효성 검사 API 구현 컴포넌트를 통해 유효성 검사를 지원한다.
+- 모델 데이터가 없거나 처리할 필요가 없는 HTTP GET 요청을 처리할 때는 뷰 컨트롤러를 사용할 수 있다.
+- 스프링은 다양한 뷰 템플릿을 지원한다.
